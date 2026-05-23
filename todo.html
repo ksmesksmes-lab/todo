@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Todo 앱</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const STORAGE_KEY = 'todos';
+
+    function loadFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveToStorage(todos) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+      } catch (e) {
+        console.error('저장 실패:', e);
+      }
+    }
+
+    function useTodos() {
+      const [todos, setTodos] = useState(loadFromStorage);
+
+      useEffect(() => {
+        saveToStorage(todos);
+      }, [todos]);
+
+      function addTodo(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const now = Date.now();
+        setTodos(prev => [{
+          id: crypto.randomUUID(),
+          text: trimmed,
+          completed: false,
+          createdAt: now,
+          updatedAt: now,
+        }, ...prev]);
+      }
+
+      function deleteTodo(id) {
+        setTodos(prev => prev.filter(t => t.id !== id));
+      }
+
+      function updateTodo(id, text) {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        setTodos(prev =>
+          prev.map(t => t.id === id ? { ...t, text: trimmed, updatedAt: Date.now() } : t)
+        );
+      }
+
+      function toggleTodo(id) {
+        setTodos(prev =>
+          prev.map(t => t.id === id ? { ...t, completed: !t.completed, updatedAt: Date.now() } : t)
+        );
+      }
+
+      return { todos, addTodo, deleteTodo, updateTodo, toggleTodo };
+    }
+
+    function TodoInput({ onAdd }) {
+      const [value, setValue] = useState('');
+
+      function handleAdd() {
+        if (!value.trim()) return;
+        onAdd(value);
+        setValue('');
+      }
+
+      return (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            maxLength={200}
+            placeholder="할 일을 입력하세요..."
+            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <button
+            onClick={handleAdd}
+            className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 active:bg-blue-700"
+          >
+            추가
+          </button>
+        </div>
+      );
+    }
+
+    function TodoItem({ todo, onToggle, onUpdate, onDelete }) {
+      const [editing, setEditing] = useState(false);
+      const [editValue, setEditValue] = useState(todo.text);
+      const inputRef = useRef(null);
+
+      useEffect(() => {
+        if (editing) inputRef.current?.focus();
+      }, [editing]);
+
+      function handleEditStart() {
+        setEditValue(todo.text);
+        setEditing(true);
+      }
+
+      function handleEditSave() {
+        if (editValue.trim()) onUpdate(todo.id, editValue);
+        setEditing(false);
+      }
+
+      function handleEditCancel() {
+        setEditValue(todo.text);
+        setEditing(false);
+      }
+
+      return (
+        <li className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <input
+            type="checkbox"
+            checked={todo.completed}
+            onChange={() => onToggle(todo.id)}
+            className="h-4 w-4 cursor-pointer accent-blue-500"
+          />
+          {editing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={e => setEditValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleEditSave();
+                if (e.key === 'Escape') handleEditCancel();
+              }}
+              onBlur={handleEditSave}
+              maxLength={200}
+              className="flex-1 rounded border border-blue-400 px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          ) : (
+            <span
+              onDoubleClick={handleEditStart}
+              className={`flex-1 text-sm ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-800'}`}
+            >
+              {todo.text}
+            </span>
+          )}
+          <div className="flex shrink-0 gap-1">
+            {editing ? (
+              <>
+                <button onClick={handleEditSave} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">저장</button>
+                <button onClick={handleEditCancel} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">취소</button>
+              </>
+            ) : (
+              <>
+                <button onClick={handleEditStart} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">수정</button>
+                <button onClick={() => onDelete(todo.id)} className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-50">삭제</button>
+              </>
+            )}
+          </div>
+        </li>
+      );
+    }
+
+    function TodoList({ todos, onToggle, onUpdate, onDelete }) {
+      if (todos.length === 0) {
+        return (
+          <p className="py-10 text-center text-sm text-gray-400">
+            할 일이 없습니다. 새 항목을 추가해보세요.
+          </p>
+        );
+      }
+      return (
+        <ul className="flex flex-col gap-2">
+          {todos.map(todo => (
+            <TodoItem
+              key={todo.id}
+              todo={todo}
+              onToggle={onToggle}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+            />
+          ))}
+        </ul>
+      );
+    }
+
+    function App() {
+      const { todos, addTodo, deleteTodo, updateTodo, toggleTodo } = useTodos();
+      const completed = todos.filter(t => t.completed).length;
+
+      return (
+        <div className="min-h-screen bg-gray-50 px-4 py-10">
+          <div className="mx-auto w-full max-w-lg">
+            <h1 className="mb-6 text-2xl font-bold text-gray-800">Todo</h1>
+            <div className="flex flex-col gap-4">
+              <TodoInput onAdd={addTodo} />
+              {todos.length > 0 && (
+                <p className="text-xs text-gray-400">
+                  전체 {todos.length}개 · 완료 {completed}개 · 남은 항목 {todos.length - completed}개
+                </p>
+              )}
+              <TodoList
+                todos={todos}
+                onToggle={toggleTodo}
+                onUpdate={updateTodo}
+                onDelete={deleteTodo}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<React.StrictMode><App /></React.StrictMode>);
+  </script>
+</body>
+</html>
